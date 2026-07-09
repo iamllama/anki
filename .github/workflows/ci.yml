@@ -98,10 +98,14 @@ jobs:
       - name: Install just
         uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b #v3
 
-      - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@732870f031d2fb36309d0deaf36abcc704a7be65
+      - name: Install cargo-nextest and cargo-llvm-cov
+        env: 
+          CARGO_INSTALL_ROOT: "out"
+        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb
         with:
-          version: "1.20.1"
+          tool: |
+            cargo-nextest@0.9.99
+            cargo-llvm-cov@0.8.4
 
       - name: Symlink node_modules
         run: ln -sf out/node_modules .

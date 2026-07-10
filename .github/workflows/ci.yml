@@ -110,7 +110,7 @@ jobs:
         if: always()
         shell: bash
         run: |
-          out/bin/cargo-binstall cargo-nextest --version 0.9.99 --locked --no-default-features --features default-no-update
+          cargo binstall cargo-nextest --version 0.9.99 --locked --no-default-features --features default-no-update
 
       - name: Symlink node_modules
         run: ln -sf out/node_modules .

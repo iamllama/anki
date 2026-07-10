@@ -103,14 +103,14 @@ jobs:
         with:
           version: "1.20.1"
 
-      - name: Install cargo-nextest
-        env:
-          GH_TOKEN: ${{ github.token }}
-          BINSTALL_DISABLE_TELEMETRY: "true"
-        if: always()
-        shell: bash
-        run: |
-          cargo binstall cargo-nextest --version 0.9.99 --locked --root out --no-default-features --features default-no-update
+      # - name: Install cargo-nextest
+      #   env:
+      #     GH_TOKEN: ${{ github.token }}
+      #     BINSTALL_DISABLE_TELEMETRY: "true"
+      #   if: always()
+      #   shell: bash
+      #   run: |
+      #     cargo binstall cargo-nextest --version 0.9.99 --locked --root out --no-default-features --features default-no-update
 
       - name: Symlink node_modules
         run: ln -sf out/node_modules .

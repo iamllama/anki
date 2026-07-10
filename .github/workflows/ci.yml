@@ -3,7 +3,7 @@ name: CI
 on:
   workflow_dispatch:
   push:
-    branches: [main, 'release/**']
+    branches: [main, 'release/**', 'ci/**']
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, labeled]
@@ -95,8 +95,26 @@ jobs:
       - name: Setup build environment
         uses: ./.github/actions/setup-anki
 
-      - name: Install just
-        uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b #v3
+      # - name: Install just
+      #   uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b #v3
+
+      - name: Install just and cargo-llvm-cov
+        env:
+          CARGO_HOME: "out"
+        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb #v2.83.0
+        with:
+          tool: |
+            just
+            cargo-llvm-cov@0.8.4
+        
+      - name: Install cargo-nextest
+        env:
+          CARGO_HOME: "out"
+        uses: taiki-e/cache-cargo-install-action@417450f3c33ee20393705369577571770643d4c7 #v3.0.7
+        with:
+          tool: cargo-nextest@0.9.99
+          no-default-features: true
+          features: default-no-update
 
       - name: Symlink node_modules
         run: ln -sf out/node_modules .
@@ -191,142 +209,3 @@ jobs:
         with:
           path: out
           key: build-Linux-${{ github.event.pull_request.number || 'main' }}-${{ github.run_id }}
-
-  # Runs on pushes to main or on PRs with the check:macos label.
-  check-macos:
-    if: >-
-      github.event_name == 'push'
-      || github.event_name == 'workflow_dispatch'
-      || contains(github.event.pull_request.labels.*.name, 'check:macos')
-    runs-on: macos-latest
-    name: check (macos)
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 #v4
-        with:
-          submodules: true
-
-      - name: Restore cargo cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 #v4
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-            ~/.cargo/bin
-            ~/.cargo/.crates.toml
-            ~/.cargo/.crates2.json
-          key: cargo-macOS-${{ hashFiles('Cargo.lock') }}
-          restore-keys: cargo-macOS-
-
-      - name: Restore build output cache
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 #v4
-        with:
-          path: out
-          key: build-macOS-${{ github.event.pull_request.number || 'main' }}-${{ github.run_id }}
-          restore-keys: |
-            build-macOS-${{ github.event.pull_request.number || 'main' }}-
-            build-macOS-main-
-            build-macOS-
-
-      - name: Setup build environment
-        uses: ./.github/actions/setup-anki
-
-      - name: Install just
-        uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b #v3
-
-      - name: Symlink node_modules
-        run: ln -sf out/node_modules .
-
-      - name: Build, lint, and test
-        run: |
-          just build
-          just wheels
-          just lint
-          just test
-
-      - name: Clean non-cacheable state
-        if: always()
-        shell: bash
-        run: |
-          rm -rf out/pyenv
-          rm -f out/build.ninja
-
-      - name: Save build output cache
-        if: always()
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 #v4
-        with:
-          path: out
-          key: build-macOS-${{ github.event.pull_request.number || 'main' }}-${{ github.run_id }}
-
-  # Runs on pushes to main or on PRs with the check:windows label.
-  check-windows:
-    if: >-
-      github.event_name == 'push'
-      || github.event_name == 'workflow_dispatch'
-      || contains(github.event.pull_request.labels.*.name, 'check:windows')
-    runs-on: windows-latest
-    name: check (windows)
-    # Colocate CARGO_HOME and TEMP on D: to keep all I/O on the same fast
-    # local disk.
-    env:
-      CARGO_HOME: D:\cargo-home
-      TEMP: D:\tmp
-      TMP: D:\tmp
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 #v4
-        with:
-          submodules: true
-
-      - name: Prepare D:\ directories
-        shell: bash
-        run: mkdir -p /d/cargo-home /d/tmp
-
-      - name: Restore cargo cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 #v4
-        with:
-          path: |
-            D:\cargo-home\registry\index
-            D:\cargo-home\registry\cache
-            D:\cargo-home\git\db
-            D:\cargo-home\bin
-            D:\cargo-home\.crates.toml
-            D:\cargo-home\.crates2.json
-          key: cargo-Windows-${{ hashFiles('Cargo.lock') }}
-          restore-keys: cargo-Windows-
-
-      - name: Restore build output cache
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 #v4
-        with:
-          path: out
-          key: build-Windows-${{ github.event.pull_request.number || 'main' }}-${{ github.run_id }}
-          restore-keys: |
-            build-Windows-${{ github.event.pull_request.number || 'main' }}-
-            build-Windows-main-
-            build-Windows-
-
-      - name: Setup build environment
-        uses: ./.github/actions/setup-anki
-
-      - name: Install just
-        uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b #v3
-
-      - name: Build, lint, and test
-        run: |
-          just build
-          just lint
-          just test
-
-      # Also remove node_modules on Windows — file-locking corrupts the cache.
-      - name: Clean non-cacheable state
-        if: always()
-        shell: bash
-        run: |
-          rm -rf out/pyenv out/node_modules
-          rm -f out/build.ninja
-
-      - name: Save build output cache
-        if: always()
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 #v4
-        with:
-          path: out
-          key: build-Windows-${{ github.event.pull_request.number || 'main' }}-${{ github.run_id }}

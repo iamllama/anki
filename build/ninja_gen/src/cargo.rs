@@ -233,6 +233,7 @@ impl BuildAction for CargoInstall {
         "cargo install --color always $args --root $builddir"
     }
 
+
     fn files(&mut self, build: &mut impl FilesHandle) {
         build.add_variable("args", self.args);
         build.add_outputs("", vec![with_exe(&format!("bin/{}", self.binary_name))])

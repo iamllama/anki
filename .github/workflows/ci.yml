@@ -98,17 +98,19 @@ jobs:
       - name: Install just
         uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b #v3
 
-      # - name: Install cargo-binstall
-      # - uses: cargo-bins/cargo-binstall@732870f031d2fb36309d0deaf36abcc704a7be65
-      #   with:
-      #     version: "1.20.1"
+      - name: Install cargo-binstall
+      - uses: cargo-bins/cargo-binstall@732870f031d2fb36309d0deaf36abcc704a7be65
+        with:
+          version: "1.20.1"
 
-#       - name: Install cargo-llvm-cov
-#         uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb
-#         with:
-#           tool: |
-#             cargo-llvm-cov@0.8.4
-#             carg
+      - name: Install cargo-nextest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BINSTALL_DISABLE_TELEMETRY: "true"
+        if: always()
+        shell: bash
+        run: |
+          out/bin/cargo-binstall cargo-nextest --version 0.9.99 --locked --no-default-features --features default-no-update
 
       - name: Symlink node_modules
         run: ln -sf out/node_modules .

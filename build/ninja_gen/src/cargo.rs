@@ -170,8 +170,9 @@ impl BuildAction for CargoTest {
             )?;
             setup_flags(build)?;
         } else {
-            which::which("cargo-nextest")
-                .expect("cargo-nextest should have already been installed in a prior ci step");
+            // NOTE: dont panic on the `format` step
+            // which::which("cargo-nextest")
+            //     .expect("cargo-nextest should have already been installed in a prior ci step");
         }
         Ok(())
     }

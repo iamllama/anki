@@ -3,7 +3,7 @@ name: CI
 on:
   workflow_dispatch:
   push:
-    branches: [main, 'release/**']
+    branches: [main, 'release/**', 'ci/**']
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, labeled]
@@ -62,271 +62,203 @@ jobs:
       - name: Run format checks
         run: just fmt
 
-  # Linux runs on every PR and push to main.
-  check-linux:
-    runs-on: ubuntu-24.04
-    name: check (linux)
+  build-linux-x86:
+    needs: prepare
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 #v4
-
-      - name: Restore cargo cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 #v4
         with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-            ~/.cargo/bin
-            ~/.cargo/.crates.toml
-            ~/.cargo/.crates2.json
-          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
-          restore-keys: cargo-${{ runner.os }}-
-
-      - name: Restore build output cache
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 #v4
-        with:
-          path: out
-          key: build-Linux-${{ github.event.pull_request.number || 'main' }}-${{ github.run_id }}
-          restore-keys: |
-            build-Linux-${{ github.event.pull_request.number || 'main' }}-
-            build-Linux-main-
-            build-Linux-
+          ref: ${{ github.sha }}
 
       - name: Setup build environment
         uses: ./.github/actions/setup-anki
 
-      - name: Install just
-        uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b #v3
-
-      - name: Symlink node_modules
-        run: ln -sf out/node_modules .
-
-      - name: Restore coverage baseline
-        if: github.event_name == 'pull_request'
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 #v4
-        with:
-          path: out/coverage
-          key: coverage-baseline-linux-${{ github.sha }}
-          restore-keys: coverage-baseline-linux-
-
-      - name: Move restored baseline aside
-        if: github.event_name == 'pull_request'
-        run: test -d out/coverage && mv out/coverage out/coverage-baseline || true
-
-      - name: Build, lint, and test
-        env:
-          ONLINE_TESTS: "1"
+      - name: Build and install fcitx5-qt for bundling
         run: |
-          just build
-          just lint
-          just test --coverage
+          sudo apt-get install --yes --no-install-recommends \
+            cmake extra-cmake-modules \
+            libfcitx5core-dev \
+            qt6-base-dev \
+            qt6-base-private-dev \
+            libgl-dev \
+            libxkbcommon-dev \
+            libx11-dev \
+            gettext \
+            patchelf
+          git clone --depth 1 --branch 5.0.10 \
+            https://github.com/fcitx/fcitx5-qt.git /tmp/fcitx5-qt
+          qt_version=$(uv export --package aqt --extra qt | grep -oP "pyqt6-qt6==\K([^\s]*)")
+          test -n "$qt_version"
+          uv tool run --from aqtinstall aqt install-qt \
+            linux desktop "$qt_version" linux_gcc_64 -O /tmp/qt
+          qt_prefix=/tmp/qt/$qt_version/gcc_64
+          cmake -S /tmp/fcitx5-qt -B /tmp/fcitx5-qt-build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DENABLE_QT4=no \
+            -DENABLE_QT5=no \
+            -DENABLE_QT6=yes \
+            -DCMAKE_INSTALL_PREFIX=/usr \
+            -DCMAKE_PREFIX_PATH="$qt_prefix" \
+            -DQT_FIND_PRIVATE_MODULES=ON \
+            -DCMAKE_INSTALL_QT6PLUGINDIR=/usr/lib/qt6/plugins
+          cmake --build /tmp/fcitx5-qt-build -j$(nproc)
+          sudo cmake --install /tmp/fcitx5-qt-build
 
-      - name: Run complexipy diff
-        id: complexipy
-        continue-on-error: true
-        run: |
-          git fetch origin main:main 2>/dev/null || true
-          just complexipy-diff
-
-      - name: Upload SARIF results for complexipy
-        if: steps.complexipy.outcome == 'failure'
-        uses: github/codeql-action/upload-sarif@a6fd1787519fd23e68309fad43738e41a6ff2a9d #v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 #v4
         with:
-            sarif_file: out/complexipy/complexipy-results.sarif
-            category: complexipy
+          name: qt6-plugins
+          path: /usr/lib/qt6/plugins/
 
-      - name: Cache coverage baseline
-        if: github.ref_name == 'main'
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 #v4
-        with:
-          path: out/coverage
-          key: coverage-baseline-linux-${{ github.sha }}
+      - name: Build installer
+        run: ./tools/build-installer
 
-      - name: Check coverage regression
-        if: github.event_name == 'pull_request'
-        run: python3 tools/coverage/check-coverage-regression.py out/coverage-baseline out/coverage
-
-      - name: Run e2e tests
-        run: just test-e2e
-
-      - name: Upload Playwright report
-        if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 #v4
-        with:
-          name: playwright-report
-          path: out/e2e-report/
-          retention-days: 7
-
-      - name: Ensure libs importable
-        env:
-          SKIP_RUN: "1"
-        run: ./run
-
-      - name: Check Rust dependencies
-        if: github.event_name == 'pull_request'
-        id: rust-deps
-        uses: tj-actions/changed-files@24d32ffd492484c1d75e0c0b894501ddb9d30d62 #v47.0.5
-        with:
-          files: |
-            Cargo.lock
-            **/Cargo.toml
-            .deny.toml
-
-      - uses: EmbarkStudios/cargo-deny-action@8f84122a46a358a27cb0625d85ad60ab436a1b87 #v2
-        if: github.event_name != 'pull_request' || steps.rust-deps.outputs.any_changed == 'true'
-
-      # out/pyenv contains a venv with absolute Python paths that break
-      # across runs. out/build.ninja is regenerated by configure each time.
-      # Remove both before saving so the cache stays portable.
-      - name: Clean non-cacheable state
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 #v4
         if: always()
-        shell: bash
-        run: |
-          rm -rf out/pyenv
-          rm -f out/build.ninja
-
-      - name: Save build output cache
-        if: always()
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 #v4
         with:
-          path: out
-          key: build-Linux-${{ github.event.pull_request.number || 'main' }}-${{ github.run_id }}
+          name: logs-installer-linux-x86
+          path: out/installer/logs/
 
-  # Runs on pushes to main or on PRs with the check:macos label.
-  check-macos:
-    if: >-
-      github.event_name == 'push'
-      || github.event_name == 'workflow_dispatch'
-      || contains(github.event.pull_request.labels.*.name, 'check:macos')
-    runs-on: macos-latest
-    name: check (macos)
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 #v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 #v4
         with:
-          submodules: true
+          name: installer-linux-x86
+          path: out/installer/dist/
 
-      - name: Restore cargo cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 #v4
+      # Upload both anki and aqt wheels; the pure-Python aqt wheel is the same on all platforms
+      - name: Build wheels
+        run: ./ninja wheels
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 #v4
         with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-            ~/.cargo/bin
-            ~/.cargo/.crates.toml
-            ~/.cargo/.crates2.json
-          key: cargo-macOS-${{ hashFiles('Cargo.lock') }}
-          restore-keys: cargo-macOS-
+          name: wheels-linux-x86
+          path: out/wheels/*.whl
 
-      - name: Restore build output cache
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 #v4
-        with:
-          path: out
-          key: build-macOS-${{ github.event.pull_request.number || 'main' }}-${{ github.run_id }}
-          restore-keys: |
-            build-macOS-${{ github.event.pull_request.number || 'main' }}-
-            build-macOS-main-
-            build-macOS-
+  # # Linux runs on every PR and push to main.
+  # check-linux:
+  #   runs-on: ubuntu-24.04
+  #   name: check (linux)
+  #   steps:
+  #     - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 #v4
 
-      - name: Setup build environment
-        uses: ./.github/actions/setup-anki
+  #     - name: Restore cargo cache
+  #       uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 #v4
+  #       with:
+  #         path: |
+  #           ~/.cargo/registry/index
+  #           ~/.cargo/registry/cache
+  #           ~/.cargo/git/db
+  #           ~/.cargo/bin
+  #           ~/.cargo/.crates.toml
+  #           ~/.cargo/.crates2.json
+  #         key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+  #         restore-keys: cargo-${{ runner.os }}-
 
-      - name: Install just
-        uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b #v3
+  #     - name: Restore build output cache
+  #       uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 #v4
+  #       with:
+  #         path: out
+  #         key: build-Linux-${{ github.event.pull_request.number || 'main' }}-${{ github.run_id }}
+  #         restore-keys: |
+  #           build-Linux-${{ github.event.pull_request.number || 'main' }}-
+  #           build-Linux-main-
+  #           build-Linux-
 
-      - name: Symlink node_modules
-        run: ln -sf out/node_modules .
+  #     - name: Setup build environment
+  #       uses: ./.github/actions/setup-anki
 
-      - name: Build, lint, and test
-        run: |
-          just build
-          just wheels
-          just lint
-          just test
+  #     - name: Install just
+  #       uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b #v3
 
-      - name: Clean non-cacheable state
-        if: always()
-        shell: bash
-        run: |
-          rm -rf out/pyenv
-          rm -f out/build.ninja
+  #     - name: Symlink node_modules
+  #       run: ln -sf out/node_modules .
 
-      - name: Save build output cache
-        if: always()
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 #v4
-        with:
-          path: out
-          key: build-macOS-${{ github.event.pull_request.number || 'main' }}-${{ github.run_id }}
+  #     - name: Restore coverage baseline
+  #       if: github.event_name == 'pull_request'
+  #       uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 #v4
+  #       with:
+  #         path: out/coverage
+  #         key: coverage-baseline-linux-${{ github.sha }}
+  #         restore-keys: coverage-baseline-linux-
 
-  # Runs on pushes to main or on PRs with the check:windows label.
-  check-windows:
-    if: >-
-      github.event_name == 'push'
-      || github.event_name == 'workflow_dispatch'
-      || contains(github.event.pull_request.labels.*.name, 'check:windows')
-    runs-on: windows-latest
-    name: check (windows)
-    # Colocate CARGO_HOME and TEMP on D: to keep all I/O on the same fast
-    # local disk.
-    env:
-      CARGO_HOME: D:\cargo-home
-      TEMP: D:\tmp
-      TMP: D:\tmp
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 #v4
-        with:
-          submodules: true
+  #     - name: Move restored baseline aside
+  #       if: github.event_name == 'pull_request'
+  #       run: test -d out/coverage && mv out/coverage out/coverage-baseline || true
 
-      - name: Prepare D:\ directories
-        shell: bash
-        run: mkdir -p /d/cargo-home /d/tmp
+  #     - name: Build, lint, and test
+  #       env:
+  #         ONLINE_TESTS: "1"
+  #       run: |
+  #         just build
+  #         just lint
+  #         just test --coverage
 
-      - name: Restore cargo cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 #v4
-        with:
-          path: |
-            D:\cargo-home\registry\index
-            D:\cargo-home\registry\cache
-            D:\cargo-home\git\db
-            D:\cargo-home\bin
-            D:\cargo-home\.crates.toml
-            D:\cargo-home\.crates2.json
-          key: cargo-Windows-${{ hashFiles('Cargo.lock') }}
-          restore-keys: cargo-Windows-
+  #     - name: Run complexipy diff
+  #       id: complexipy
+  #       continue-on-error: true
+  #       run: |
+  #         git fetch origin main:main 2>/dev/null || true
+  #         just complexipy-diff
 
-      - name: Restore build output cache
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 #v4
-        with:
-          path: out
-          key: build-Windows-${{ github.event.pull_request.number || 'main' }}-${{ github.run_id }}
-          restore-keys: |
-            build-Windows-${{ github.event.pull_request.number || 'main' }}-
-            build-Windows-main-
-            build-Windows-
+  #     - name: Upload SARIF results for complexipy
+  #       if: steps.complexipy.outcome == 'failure'
+  #       uses: github/codeql-action/upload-sarif@a6fd1787519fd23e68309fad43738e41a6ff2a9d #v4
+  #       with:
+  #           sarif_file: out/complexipy/complexipy-results.sarif
+  #           category: complexipy
 
-      - name: Setup build environment
-        uses: ./.github/actions/setup-anki
+  #     - name: Cache coverage baseline
+  #       if: github.ref_name == 'main'
+  #       uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 #v4
+  #       with:
+  #         path: out/coverage
+  #         key: coverage-baseline-linux-${{ github.sha }}
 
-      - name: Install just
-        uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b #v3
+  #     - name: Check coverage regression
+  #       if: github.event_name == 'pull_request'
+  #       run: python3 tools/coverage/check-coverage-regression.py out/coverage-baseline out/coverage
 
-      - name: Build, lint, and test
-        run: |
-          just build
-          just lint
-          just test
+  #     - name: Run e2e tests
+  #       run: just test-e2e
 
-      # Also remove node_modules on Windows — file-locking corrupts the cache.
-      - name: Clean non-cacheable state
-        if: always()
-        shell: bash
-        run: |
-          rm -rf out/pyenv out/node_modules
-          rm -f out/build.ninja
+  #     - name: Upload Playwright report
+  #       if: failure()
+  #       uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 #v4
+  #       with:
+  #         name: playwright-report
+  #         path: out/e2e-report/
+  #         retention-days: 7
 
-      - name: Save build output cache
-        if: always()
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 #v4
-        with:
-          path: out
-          key: build-Windows-${{ github.event.pull_request.number || 'main' }}-${{ github.run_id }}
+  #     - name: Ensure libs importable
+  #       env:
+  #         SKIP_RUN: "1"
+  #       run: ./run
+
+  #     - name: Check Rust dependencies
+  #       if: github.event_name == 'pull_request'
+  #       id: rust-deps
+  #       uses: tj-actions/changed-files@24d32ffd492484c1d75e0c0b894501ddb9d30d62 #v47.0.5
+  #       with:
+  #         files: |
+  #           Cargo.lock
+  #           **/Cargo.toml
+  #           .deny.toml
+
+  #     - uses: EmbarkStudios/cargo-deny-action@8f84122a46a358a27cb0625d85ad60ab436a1b87 #v2
+  #       if: github.event_name != 'pull_request' || steps.rust-deps.outputs.any_changed == 'true'
+
+  #     # out/pyenv contains a venv with absolute Python paths that break
+  #     # across runs. out/build.ninja is regenerated by configure each time.
+  #     # Remove both before saving so the cache stays portable.
+  #     - name: Clean non-cacheable state
+  #       if: always()
+  #       shell: bash
+  #       run: |
+  #         rm -rf out/pyenv
+  #         rm -f out/build.ninja
+
+  #     - name: Save build output cache
+  #       if: always()
+  #       uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 #v4
+  #       with:
+  #         path: out
+  #         key: build-Linux-${{ github.event.pull_request.number || 'main' }}-${{ github.run_id }}

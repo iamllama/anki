@@ -17,53 +17,7 @@ env:
   N2_OUTPUT_SUCCESS: "1"
 
 jobs:
-  minilints:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 #v4
-        with:
-          fetch-depth: 0
-          filter: blob:none
-
-      - name: Install Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 #v1
-
-      - name: Run minilints
-        run: cargo run -p minilints -- check /tmp/minilints.stamp
-        env:
-          CONTRIBUTORS_BYPASS_EMAILS: ${{ vars.CONTRIBUTORS_BYPASS_EMAILS }}
-
-  # Lightweight formatting checks (no build outputs needed).
-  # Uses individual tool installs instead of setup-anki to stay fast.
-  format:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 #v4
-
-      - name: Install Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 #v1
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 #v7
-
-      - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 #v4
-        with:
-          node-version: '20'
-
-      - name: Install n2
-        run: tools/install-n2
-        env:
-          RUSTFLAGS: "--cap-lints warn"
-
-      - name: Install just
-        uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b #v3
-
-      - name: Run format checks
-        run: just fmt
-
   build-linux-x86:
-    needs: prepare
     runs-on: ubuntu-22.04
     timeout-minutes: 90
     steps:

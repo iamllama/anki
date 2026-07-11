@@ -336,7 +336,7 @@ jobs:
         run: |
           just build
           just lint
-          just test
+          just test --coverage
 
       # Also remove node_modules on Windows — file-locking corrupts the cache.
       - name: Clean non-cacheable state

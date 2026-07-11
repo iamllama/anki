@@ -100,7 +100,6 @@ runs:
       run: echo "${CARGO_HOME:-$HOME/.cargo}/bin" >> "$GITHUB_PATH"
 
     - name: Install n2
-      env:
       uses: taiki-e/cache-cargo-install-action@417450f3c33ee20393705369577571770643d4c7 #v3.0.7
       with:
         tool: n2

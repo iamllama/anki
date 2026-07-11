@@ -100,8 +100,16 @@ runs:
       run: echo "${CARGO_HOME:-$HOME/.cargo}/bin" >> "$GITHUB_PATH"
 
     - name: Install n2
-      shell: bash
-      run: |
-        if ! command -v n2 &>/dev/null; then
-          tools/install-n2
-        fi
+      env:
+      uses: taiki-e/cache-cargo-install-action@417450f3c33ee20393705369577571770643d4c7 #v3.0.7
+      with:
+        tool: n2
+        git: https://github.com/evmar/n2.git
+        rev: 53ec691df749277104d1d4201a344fe4243d6d0a
+
+    # - name: Install n2
+    #   shell: bash
+    #   run: |
+    #     if ! command -v n2 &>/dev/null; then
+    #       tools/install-n2
+    #     fi

@@ -98,23 +98,32 @@ jobs:
       # - name: Install just
       #   uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b #v3
 
-      - name: Install just and cargo-llvm-cov
-        env:
-          CARGO_HOME: "out"
+      - name: Install just, cargo-llvm-cov and cargo-nextest
+        # env:
+        #   CARGO_HOME: "out"
         uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb #v2.83.0
         with:
           tool: |
             just
             cargo-llvm-cov@0.8.4
+            cargo-nextest@0.9.99
         
-      - name: Install cargo-nextest
-        env:
-          CARGO_HOME: "out"
-        uses: taiki-e/cache-cargo-install-action@417450f3c33ee20393705369577571770643d4c7 #v3.0.7
-        with:
-          tool: cargo-nextest@0.9.99
-          no-default-features: true
-          features: default-no-update
+      # - name: Install cargo-nextest
+      #   env:
+      #     # CARGO_HOME: "out"
+      #     # RUNNER_TOOL_CACHE: "out"
+      #   uses: taiki-e/cache-cargo-install-action@417450f3c33ee20393705369577571770643d4c7 #v3.0.7
+      #   with:
+      #     tool: cargo-nextest@0.9.99
+      #     no-default-features: true
+      #     features: default-no-update
+
+      # - name: Install cargo-nextest
+      #   env:
+      #     GH_TOKEN: ${{ github.token }}
+      #   if: always()
+      #   shell: bash
+      #   run: cargo binstall cargo-nextest --version 0.9.99 --locked --root out
 
       - name: Symlink node_modules
         run: ln -sf out/node_modules .

@@ -42,7 +42,7 @@ jobs:
             https://github.com/fcitx/fcitx5-qt.git /tmp/fcitx5-qt
           qt_version=$(uv export --package aqt --extra qt | grep -oP "pyqt6-qt6==\K([^\s]*)")
           test -n "$qt_version"
-          uv tool run --from aqtinstall aqt install-qt \
+          uv tool run --from aqtinstall aqt install-src \
             linux desktop "$qt_version" linux_gcc_64 -O /tmp/qt
           qt_prefix=/tmp/qt/$qt_version/gcc_64
           cmake -S /tmp/fcitx5-qt -B /tmp/fcitx5-qt-build \

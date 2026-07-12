@@ -52,7 +52,6 @@ jobs:
             -DENABLE_QT6=yes \
             -DCMAKE_INSTALL_PREFIX=/usr \
             -DCMAKE_PREFIX_PATH="$qt_prefix" \
-            -DQT_FIND_PRIVATE_MODULES=ON \
             -DCMAKE_INSTALL_QT6PLUGINDIR=/usr/lib/qt6/plugins
           cmake --build /tmp/fcitx5-qt-build -j$(nproc)
           sudo cmake --install /tmp/fcitx5-qt-build
